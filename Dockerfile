@@ -5,7 +5,8 @@ ARG TARGETARCH
 
 # Install Supabase CLI + zip + postgresql-client
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates curl zip bash postgresql-client && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl zip bash postgresql-client && \
     rm -rf /var/lib/apt/lists/* && \
     BUILD_ARCH="${TARGETARCH:-$(dpkg --print-architecture)}" && \
     case "$BUILD_ARCH" in \
@@ -13,9 +14,10 @@ RUN apt-get update && \
       arm64|aarch64) SUPABASE_ARCH=arm64 ;; \
       *) echo "Unsupported architecture: $BUILD_ARCH" >&2; exit 1 ;; \
     esac && \
-    curl -fsSL "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_linux_${SUPABASE_ARCH}.tar.gz" \
-    | tar -xz -C /usr/local/bin supabase && \
-    chmod +x /usr/local/bin/supabase && \
+    curl -fsSL \
+      "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_linux_${SUPABASE_ARCH}.tar.gz" \
+      | tar -xz -C /usr/local/bin && \
+    chmod +x /usr/local/bin/supabase /usr/local/bin/supabase-go && \
     supabase --version
 
 WORKDIR /app
