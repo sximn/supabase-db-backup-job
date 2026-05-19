@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Supabase Backup Manager</title>
+  <style>
+    :root {
+      --bg:       #0c0e12;
+      --surface:  #13161d;
+      --border:   #1f2430;
+      --accent:   #3ecf8e;
+      --accent2:  #1a7a50;
+      --warn:     #e05c5c;
+      --muted:    #4a5568;
+      --text:     #e2e8f0;
+      --textdim:  #718096;
+      --mono:     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Courier New', monospace;
+      --sans:     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* noise texture overlay */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      position: sticky;
+      top: 0;
+      background: rgba(12,14,18,0.85);
+      backdrop-filter: blur(12px);
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      color: var(--text);
+    }
+
+    .logo-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      animation: pulse 2.4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--accent); }
+      50%       { opacity: 0.4; box-shadow: 0 0 2px var(--accent); }
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .status-badge {
+      font-family: var(--mono);
+      font-size: 0.7rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--textdim);
+      letter-spacing: 0.08em;
+    }
+
+    main {
+      max-width: 900px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2.5rem 2rem;
+      position: relative;
+      z-index: 1;
+      flex: 1;
+    }
+
+    .page-title {
+      font-size: 1.5rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.3rem;
+    }
+
+    .page-subtitle {
+      color: var(--textdim);
+      font-size: 0.875rem;
+      margin-bottom: 2rem;
+    }
+
+    /* action bar */
+    .action-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.5rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .stats {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-value {
+      font-family: var(--mono);
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      color: var(--textdim);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 18px;
+      border-radius: 6px;
+      font-family: var(--sans);
+      font-size: 0.875rem;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0a1a12;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: #52e0a2;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(62,207,142,0.25);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--textdim);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover {
+      border-color: var(--muted);
+      color: var(--text);
+    }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--warn);
+      border: 1px solid transparent;
+      padding: 6px 10px;
+      font-size: 0.8rem;
+    }
+
+    .btn-danger:hover {
+      border-color: var(--warn);
+      background: rgba(224,92,92,0.08);
+    }
+
+    .btn-download {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent2);
+      padding: 6px 12px;
+      font-size: 0.8rem;
+    }
+
+    .btn-download:hover {
+      background: rgba(62,207,142,0.08);
+    }
+
+    /* spinner */
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(10,26,18,0.3);
+      border-top-color: #0a1a12;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* toast */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-family: var(--mono);
+      z-index: 100;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      max-width: 340px;
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    #toast.success { background: var(--accent); color: #0a1a12; }
+    #toast.error   { background: var(--warn);   color: #fff; }
+    #toast.info    { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+
+    /* log panel */
+    .log-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.2rem;
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--textdim);
+      margin-bottom: 1.5rem;
+      min-height: 48px;
+      max-height: 120px;
+      overflow-y: auto;
+      display: none;
+      line-height: 1.7;
+    }
+
+    .log-panel.visible { display: block; }
+
+    .log-line { display: flex; gap: 10px; }
+    .log-time { color: var(--muted); flex-shrink: 0; }
+    .log-ok   { color: var(--accent); }
+    .log-err  { color: var(--warn); }
+
+    /* table */
+    .table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead tr {
+      background: rgba(31,36,48,0.6);
+    }
+
+    th {
+      text-align: left;
+      padding: 10px 16px;
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--textdim);
+      border-bottom: 1px solid var(--border);
+      font-weight: 400;
+    }
+
+    td {
+      padding: 13px 16px;
+      font-size: 0.875rem;
+      border-bottom: 1px solid rgba(31,36,48,0.8);
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    tbody tr {
+      transition: background 0.1s ease;
+    }
+
+    tbody tr:hover {
+      background: rgba(255,255,255,0.02);
+    }
+
+    .filename {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--text);
+    }
+
+    .filesize {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--textdim);
+    }
+
+    .date-col {
+      font-family: var(--mono);
+      font-size: 0.75rem;
+      color: var(--textdim);
+    }
+
+    .date-relative {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .actions-col {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    /* empty / loading states */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--textdim);
+    }
+
+    .empty-icon {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+      opacity: 0.4;
+    }
+
+    .empty-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+    }
+
+    .empty-sub {
+      font-size: 0.8rem;
+    }
+
+    .loading-row td {
+      text-align: center;
+      color: var(--textdim);
+      font-size: 0.8rem;
+      padding: 3rem;
+      font-family: var(--mono);
+    }
+
+    /* confirm modal */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 50;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.open { display: flex; }
+
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.8rem;
+      max-width: 360px;
+      width: 90%;
+      animation: modalIn 0.2s ease;
+    }
+
+    @keyframes modalIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+
+    .modal h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.6rem;
+    }
+
+    .modal p {
+      font-size: 0.85rem;
+      color: var(--textdim);
+      margin-bottom: 1.4rem;
+      line-height: 1.6;
+    }
+
+    .modal p code {
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      color: var(--text);
+      word-break: break-all;
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+
+    .btn-confirm-delete {
+      background: var(--warn);
+      color: #fff;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-confirm-delete:hover {
+      background: #f07070;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 1rem 2rem;
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--muted);
+      font-family: var(--mono);
+      letter-spacing: 0.05em;
+      position: relative;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    SUPABASE / BACKUP MANAGER
+  </div>
+  <div class="header-right">
+    <span class="status-badge" id="connectionStatus">CONNECTING...</span>
+  </div>
+</header>
+
+<main>
+  <div class="page-title">Database Backups</div>
+  <div class="page-subtitle">Scheduled dumps from your Supabase instance — roles, schema, data & migration history.</div>
+
+  <div class="action-bar">
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-value" id="backupCount">—</span>
+        <span class="stat-label">Backups</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="totalSize">—</span>
+        <span class="stat-label">Total size</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value" id="lastBackup">—</span>
+        <span class="stat-label">Last backup</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" onclick="loadBackups()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Refresh
+      </button>
+      <button class="btn btn-primary" id="runBtn" onclick="triggerBackup()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 3l14 9-14 9V3z"/></svg>
+        <div class="spinner" id="runSpinner"></div>
+        <span id="runLabel">Run Backup Now</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="log-panel" id="logPanel"></div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Filename</th>
+          <th>Size</th>
+          <th>Created</th>
+          <th style="text-align:right">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="backupTableBody">
+        <tr class="loading-row"><td colspan="5">Loading backups...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<div class="modal-backdrop" id="deleteModal">
+  <div class="modal">
+    <h3>Delete backup?</h3>
+    <p>This will permanently remove <code id="deleteFileName"></code>. This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeDeleteModal()">Cancel</button>
+      <button class="btn-confirm-delete" onclick="confirmDelete()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<footer>SUPABASE BACKUP MANAGER &mdash; runs on Coolify</footer>
+
+<script>
+  let pendingDeleteName = null;
+
+  // ─── Utilities ─────────────────────────────────────────────────────────────
+
+  function fmt(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+  }
+
+  function relativeTime(dateStr) {
+    const diff = Date.now() - new Date(dateStr);
+    const m = Math.floor(diff / 60000);
+    if (m < 1)  return 'just now';
+    if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60);
+    if (h < 24) return h + 'h ago';
+    return Math.floor(h / 24) + 'd ago';
+  }
+
+  function fmtDate(dateStr) {
+    return new Date(dateStr).toLocaleString(undefined, {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  }
+
+  function toast(msg, type = 'info', duration = 3500) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `show ${type}`;
+    clearTimeout(el._timer);
+    el._timer = setTimeout(() => { el.className = ''; }, duration);
+  }
+
+  function log(msg, cls = '') {
+    const panel = document.getElementById('logPanel');
+    panel.classList.add('visible');
+    const now = new Date().toLocaleTimeString();
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `<span class="log-time">${now}</span><span class="${cls}">${msg}</span>`;
+    panel.appendChild(line);
+    panel.scrollTop = panel.scrollHeight;
+  }
+
+  // ─── Load backups ───────────────────────────────────────────────────────────
+
+  async function loadBackups() {
+    const tbody = document.getElementById('backupTableBody');
+    tbody.innerHTML = '<tr class="loading-row"><td colspan="5">Loading backups...</td></tr>';
+
+    try {
+      const res = await fetch('/api/backups');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const backups = await res.json();
+
+      document.getElementById('connectionStatus').textContent = 'ONLINE';
+      document.getElementById('backupCount').textContent = backups.length;
+
+      const totalBytes = backups.reduce((s, b) => s + b.size, 0);
+      document.getElementById('totalSize').textContent = backups.length ? fmt(totalBytes) : '—';
+      document.getElementById('lastBackup').textContent = backups.length
+        ? relativeTime(backups[0].createdAt) : '—';
+
+      if (!backups.length) {
+        tbody.innerHTML = `
+          <tr><td colspan="5">
+            <div class="empty-state">
+              <div class="empty-icon">🗄️</div>
+              <div class="empty-title">No backups yet</div>
+              <div class="empty-sub">Run your first backup using the button above.</div>
+            </div>
+          </td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = backups.map((b, i) => `
+        <tr>
+          <td class="filesize">${i + 1}</td>
+          <td><div class="filename">${escHtml(b.name)}</div></td>
+          <td class="filesize">${fmt(b.size)}</td>
+          <td>
+            <div class="date-col">${fmtDate(b.createdAt)}</div>
+            <div class="date-relative">${relativeTime(b.createdAt)}</div>
+          </td>
+          <td>
+            <div class="actions-col">
+              <a class="btn btn-download" href="/api/backups/${encodeURIComponent(b.name)}" download>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download
+              </a>
+              <button class="btn btn-danger" onclick="openDeleteModal('${escHtml(b.name)}')">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+              </button>
+            </div>
+          </td>
+        </tr>`).join('');
+
+    } catch (err) {
+      document.getElementById('connectionStatus').textContent = 'OFFLINE';
+      tbody.innerHTML = `
+        <tr><td colspan="5">
+          <div class="empty-state">
+            <div class="empty-icon">⚠️</div>
+            <div class="empty-title">Could not load backups</div>
+            <div class="empty-sub">${escHtml(err.message)}</div>
+          </div>
+        </td></tr>`;
+    }
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  // ─── Trigger manual backup ──────────────────────────────────────────────────
+
+  async function triggerBackup() {
+    const btn = document.getElementById('runBtn');
+    const spinner = document.getElementById('runSpinner');
+    const label = document.getElementById('runLabel');
+
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    label.textContent = 'Running…';
+    log('Triggering backup...', 'log-ok');
+
+    try {
+      const res = await fetch('/api/backup/run', { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast('Backup started in background — refresh in a moment.', 'success', 5000);
+      log('Backup triggered successfully — running in background.', 'log-ok');
+      // auto-refresh after ~15s
+      setTimeout(() => { loadBackups(); log('Auto-refreshed backup list.'); }, 15000);
+    } catch (err) {
+      toast('Failed to trigger backup: ' + err.message, 'error');
+      log('Error: ' + err.message, 'log-err');
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      label.textContent = 'Run Backup Now';
+    }
+  }
+
+  // ─── Delete ─────────────────────────────────────────────────────────────────
+
+  function openDeleteModal(name) {
+    pendingDeleteName = name;
+    document.getElementById('deleteFileName').textContent = name;
+    document.getElementById('deleteModal').classList.add('open');
+  }
+
+  function closeDeleteModal() {
+    pendingDeleteName = null;
+    document.getElementById('deleteModal').classList.remove('open');
+  }
+
+  async function confirmDelete() {
+    if (!pendingDeleteName) return;
+    closeDeleteModal();
+    try {
+      const res = await fetch(`/api/backups/${encodeURIComponent(pendingDeleteName)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast('Backup deleted.', 'success');
+      log(`Deleted: ${pendingDeleteName}`, 'log-err');
+      loadBackups();
+    } catch (err) {
+      toast('Delete failed: ' + err.message, 'error');
+    }
+  }
+
+  // close modal on backdrop click
+  document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) closeDeleteModal();
+  });
+
+  // ─── Init ───────────────────────────────────────────────────────────────────
+  loadBackups();
+</script>
+</body>
+</html>
