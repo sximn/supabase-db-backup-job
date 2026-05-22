@@ -9,7 +9,7 @@ const BACKUPS_DIR = process.env.BACKUPS_DIR || '/backups';
 const PORT = Number.parseInt(process.env.PORT || '3000', 10);
 const UI_USER = process.env.BACKUP_UI_USER || 'admin';
 const UI_PASSWORD = process.env.BACKUP_UI_PASSWORD;
-const BACKUP_NAME_RE = /^backup-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-UTC\.zip$/;
+const BACKUP_NAME_RE = /^backup-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-UTC\.tar\.zst$/;
 
 if (!UI_PASSWORD) {
   console.error('BACKUP_UI_PASSWORD is required. Refusing to start an unauthenticated backup console.');
@@ -138,7 +138,7 @@ app.post('/api/backup/run', (req, res) => {
     return res.status(409).json({ error: 'Backup already running' });
   }
 
-  const child = spawn('/usr/local/bin/backup.sh', {
+  const child = spawn('/app/backup.sh', {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: process.env,
   });

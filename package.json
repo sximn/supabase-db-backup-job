@@ -4,12 +4,22 @@
   "private": true,
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+
+    "dump:gen:roles": "supabase db dump --local --file dump_roles.sh --role-only --dry-run > scripts/dump_roles.sh",
+    "dump:gen:data": "supabase db dump --local --file dump_data.sh --use-copy --data-only --dry-run > scripts/dump_data.sh",
+    "dump:gen:schema": "supabase db dump --local --file dump_schema.sh --dry-run > scripts/dump_schema.sh",
+    "dump:gen:migrations:schema": "supabase db dump --local --file dump_mig_schema.sh --schema supabase_migrations --dry-run > scripts/dump_mig_schema.sh",
+    "dump:gen:migrations:data": "supabase db dump --local --file dump_mig_data.sh --use-copy --data-only --schema supabase_migrations --dry-run > scripts/dump_mig_data.sh",
+    "dump:gen:all": "npm run dump:gen:roles && npm run dump:gen:schema && npm run dump:gen:data && npm run dump:gen:migrations:schema && npm run dump:gen:migrations:data"
   },
   "engines": {
     "node": "24.15.0"
   },
   "dependencies": {
     "express": "5.1.0"
+  },
+  "devDependencies": {
+    "supabase": "2.101.0"
   }
 }

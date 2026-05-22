@@ -2,17 +2,26 @@
 set -Eeuo pipefail
 umask 077
 
+LOCK_DIR="/tmp/supabase-backup.lock"
 BACKUP_NAME="backup-$(date -u +'%Y-%m-%d_%H-%M-%S-UTC')"
 BACKUP_DIR="/backups/$BACKUP_NAME"
-ARCHIVE="/backups/$BACKUP_NAME.zip"
-LOCK_DIR="/tmp/supabase-backup.lock"
+ARCHIVE_NAME="$BACKUP_NAME.tar.zst"
+ARCHIVE_PATH="/backups/$ARCHIVE_NAME"
 
-required_vars=(SUPA_DB_USER SUPA_DB_PWD SUPA_SERVER_IP SUPA_DB_NAME)
+required_vars=(SUPA_DB_USER SUPA_DB_PWD SUPA_DB_HOST SUPA_DB_PORT SUPA_DB_NAME)
 for var in "${required_vars[@]}"; do
   if [[ -z "${!var:-}" ]]; then
     echo "Missing required environment variable: $var" >&2
     exit 1
   fi
+done
+
+required_bins=(pg_dump tar)
+for bin in "${required_bins[@]}"; do
+  command -v "$bin" >/dev/null || {
+    echo "Missing required binary: $bin" >&2
+    exit 1
+  }
 done
 
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
@@ -21,7 +30,11 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
 fi
 
 cleanup() {
-  rm -rf "$BACKUP_DIR" "$LOCK_DIR"
+  rm -rf "$LOCK_DIR"
+  if [[ -d "$BACKUP_DIR" ]]; then
+    echo "Cleaning up dangling raw backup folder..." >&2
+    rm -rf "$BACKUP_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -42,21 +55,24 @@ urlencode() {
   printf '%s' "$encoded"
 }
 
-DB_URL="postgres://$(urlencode "$SUPA_DB_USER"):$(urlencode "$SUPA_DB_PWD")@${SUPA_SERVER_IP}:5432/$(urlencode "$SUPA_DB_NAME")"
-
 mkdir -p "$BACKUP_DIR"
 echo "Starting Supabase DB dump: $BACKUP_NAME"
 
-supabase db dump --db-url "$DB_URL" --file "$BACKUP_DIR/roles.sql" --role-only
-supabase db dump --db-url "$DB_URL" --file "$BACKUP_DIR/schema.sql"
-supabase db dump --db-url "$DB_URL" --file "$BACKUP_DIR/data.sql" --use-copy --data-only
-supabase db dump --db-url "$DB_URL" -f "$BACKUP_DIR/history_schema.sql" --schema supabase_migrations
-supabase db dump --db-url "$DB_URL" -f "$BACKUP_DIR/history_data.sql" --use-copy --data-only --schema supabase_migrations
+export DB_URL="postgres://$(urlencode "$SUPA_DB_USER"):$(urlencode "$SUPA_DB_PWD")@${SUPA_DB_HOST}:${SUPA_DB_PORT}/$(urlencode "$SUPA_DB_NAME")"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+"$SCRIPT_DIR/scripts/dump_roles.sh" "$BACKUP_DIR/roles.sql"
+"$SCRIPT_DIR/scripts/dump_schema.sh" "$BACKUP_DIR/schema.sql"
+"$SCRIPT_DIR/scripts/dump_data.sh" "$BACKUP_DIR/data.sql"
+"$SCRIPT_DIR/scripts/dump_mig_schema.sh" "$BACKUP_DIR/migration_history_schema.sql"
+"$SCRIPT_DIR/scripts/dump_mig_data.sh" "$BACKUP_DIR/migration_history_data.sql"
 
 (
   cd /backups
-  zip -qr "$ARCHIVE.tmp" "$BACKUP_NAME"
+  tar --zstd -cf "$ARCHIVE_NAME.tmp" "$BACKUP_NAME"
 )
-mv "$ARCHIVE.tmp" "$ARCHIVE"
 
-echo "Backup complete: $BACKUP_NAME.zip"
+mv "/backups/$ARCHIVE_NAME.tmp" "$ARCHIVE_PATH"
+
+echo "Backup complete: $ARCHIVE_NAME"
